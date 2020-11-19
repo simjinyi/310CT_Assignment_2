@@ -18,33 +18,58 @@ FACTS:
 	FACT dust 3 6;
 	
 	FACT exit 7 6;
+	FACT MAX_X 7;
+	FACT MAX_Y 6;
 
-PLAN: 
+PLAN:
 {
 NAME: 
-	"Move the robot from the start till the end"
+	"Clean"
 	
 GOAL:
 	ACHIEVE clean;
 	
 BODY:
-	RETRIEVE robotA $x $y;
-	EXECUTE println "Robot A starting position: (" $x ", " $y ")";
-	ASSIGN $goRight "true";
-	
-	DO {
-		PERFORM collect "robotA";
+	ACHIEVE robotBClean;
+}
 
-		WHEN: TEST(>= $x 7) {
+PLAN:
+{
+NAME: 
+	"Move the robot to scan over every grid"
+	
+GOAL:
+	ACHIEVE robotAClean;
+	
+BODY:
+	RETRIEVE MAX_X $MAX_X;
+	RETRIEVE MAX_Y $MAX_Y;
+
+	RETRIEVE robotA $x $y;
+	EXECUTE println "Robot A: (" $x ", " $y ")";
+	ASSIGN $goRight "true";
+	ASSIGN $finalX 0;
+
+	DO {
+
+		WHEN: TEST(>= $x $MAX_X) {
 			ASSIGN $goRight "false";
 			PERFORM move "robotA" "up";
+
+			WHEN: TEST(== $y $MAX_Y) {
+				ASSIGN $finalX (+ $finalX 1);
+			};
 		};
 		
 		WHEN: TEST(&& (<= $x 0) (!= $y 0)) {
 			ASSIGN $goRight "true";
 			PERFORM move "robotA" "up";
+
+			WHEN: TEST(== $y $MAX_Y) {
+				ASSIGN $finalX (+ $finalX 1);
+			};
 		};
-		
+
 		WHEN: TEST(== $goRight "true") {
 			PERFORM move "robotA" "right";
 		};
@@ -52,12 +77,70 @@ BODY:
 		WHEN: TEST(== $goRight "false") {
 			PERFORM move "robotA" "left";
 		};
-		
+
 		RETRIEVE robotA $x $y;
-	} WHILE: TEST(|| (!= $x 7) (!= $y 6));
+		WHEN: TEST(== $y $MAX_Y) {
+			ASSIGN $finalX (+ $finalX 1);
+		};
+
+	} WHILE: TEST(&& (<= $y $MAX_Y) (< $finalX $MAX_X));
 	
-	EXECUTE println "Exiting";
+FAILURE:
+	EXECUTE println "Failed to move the robot";
+}
+
+PLAN:
+{
+NAME: 
+	"Move the robot to scan over every grid"
+	
+GOAL:
+	ACHIEVE robotBClean;
+	
+BODY:
+	RETRIEVE MAX_X $MAX_X;
+	RETRIEVE MAX_Y $MAX_Y;
+
+	RETRIEVE robotB $x $y;
+	EXECUTE println "Robot B: (" $x ", " $y ")";
+	ASSIGN $goRight "false";
+	ASSIGN $finalX 0;
+
+	DO {
+
+		WHEN: TEST(&& (>= $x $MAX_X) (!= $y 0)) {
+			ASSIGN $goRight "false";
+			PERFORM move "robotB" "up";
+
+			WHEN: TEST(== $y $MAX_Y) {
+				ASSIGN $finalX (+ $finalX 1);
+			};
+		};
 		
+		WHEN: TEST(<= $x 0) {
+			ASSIGN $goRight "true";
+			PERFORM move "robotB" "up";
+
+			WHEN: TEST(== $y $MAX_Y) {
+				ASSIGN $finalX (+ $finalX 1);
+			};
+		};
+
+		WHEN: TEST(== $goRight "true") {
+			PERFORM move "robotB" "right";
+		};
+		
+		WHEN: TEST(== $goRight "false") {
+			PERFORM move "robotB" "left";
+		};
+
+		RETRIEVE robotB $x $y;
+		WHEN: TEST(== $y $MAX_Y) {
+			ASSIGN $finalX (+ $finalX 1);
+		};
+
+	} WHILE: TEST(&& (<= $y $MAX_Y) (< $finalX $MAX_X));
+	
 FAILURE:
 	EXECUTE println "Failed to move the robot";
 }
@@ -148,4 +231,27 @@ BODY:
 
 FAILURE:
 	EXECUTE println "Failed to collect the dust";
+}
+
+PLAN:
+{
+NAME:
+	"Store the visited location"
+
+GOAL:
+	ACHIEVE store $robot;
+
+BODY:
+	WHEN: TEST(== $robot "robotA") {
+		RETRIEVE robotA $x $y;
+		ASSERT visited $x $y;
+	};
+
+	WHEN: TEST(== $robot "robotB") {
+		RETRIEVE robotA $x $y;
+		ASSERT visited $x $y;
+	};
+
+FAILURE:
+	EXECUTE println "Failed to store the visited location";
 }
