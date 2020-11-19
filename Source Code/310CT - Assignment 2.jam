@@ -19,13 +19,47 @@ FACTS:
 	
 	FACT exit 7 6;
 
-OBSERVER: {
-	RETRIEVE robotA $xA $yA;
-	RETRIEVE robotB $xB $yB;
+PLAN: 
+{
+NAME: 
+	"Move the robot from the start till the end"
+	
+GOAL:
+	ACHIEVE clean;
+	
+BODY:
+	RETRIEVE robotA $x $y;
+	EXECUTE println "Robot A starting position: (" $x ", " $y ")";
+	ASSIGN $goRight "true";
+	
+	DO {
+		PERFORM collect "robotA";
 
-	WHEN: TEST(&& (== $xA $xB) (== $yA $yB)) {
-		EXECUTE println "Collide";
-	};
+		WHEN: TEST(>= $x 7) {
+			ASSIGN $goRight "false";
+			PERFORM move "robotA" "up";
+		};
+		
+		WHEN: TEST(&& (<= $x 0) (!= $y 0)) {
+			ASSIGN $goRight "true";
+			PERFORM move "robotA" "up";
+		};
+		
+		WHEN: TEST(== $goRight "true") {
+			PERFORM move "robotA" "right";
+		};
+		
+		WHEN: TEST(== $goRight "false") {
+			PERFORM move "robotA" "left";
+		};
+		
+		RETRIEVE robotA $x $y;
+	} WHILE: TEST(|| (!= $x 7) (!= $y 6));
+	
+	EXECUTE println "Exiting";
+		
+FAILURE:
+	EXECUTE println "Failed to move the robot";
 }
 
 PLAN:
@@ -81,66 +115,35 @@ FAILURE:
 	EXECUTE println "Failed to move the robot";
 }
 
-PLAN: 
-{
-NAME: 
-	"Move the robot from the start till the end"
-	
-GOAL:
-	ACHIEVE clean;
-	
-BODY:
-	RETRIEVE robotA $x $y;
-	EXECUTE println "Robot A starting position: (" $x ", " $y ")";
-	ASSIGN $goRight "true";
-	
-	DO {
-		PERFORM collect;
-
-		WHEN: TEST(>= $x 7) {
-			ASSIGN $goRight "false";
-			PERFORM move "robotA" "up";
-			EXECUTE println "Robot A moving upwards";
-		};
-		
-		WHEN: TEST(&& (<= $x 0) (!= $y 0)) {
-			ASSIGN $goRight "true";
-			PERFORM move "robotA" "up";
-			EXECUTE println "Robot A moving upwards";
-		};
-		
-		WHEN: TEST(== $goRight "true") {
-			PERFORM move "robotA" "right";
-			EXECUTE println "Robot A moving to the right";
-		};
-		
-		WHEN: TEST(== $goRight "false") {
-			PERFORM move "robotA" "left";
-			EXECUTE println "Robot A moving to the left";
-		};
-		
-		RETRIEVE robotA $x $y;
-	} WHILE: TEST(|| (!= $x 7) (!= $y 6));
-	
-	EXECUTE println "Exiting";
-		
-FAILURE:
-	EXECUTE println "Failed to move the robot";
-}
-
 PLAN:
 {
 NAME:
 	"Check and collect dust at the location of the given robot"
 
 GOAL:
-	ACHIEVE collect;
+	ACHIEVE collect $robot;
 
 BODY:
 	RETRIEVEALL $FACTS dust $x $y;
 
-	WHILE: NEXTFACT $FACTS dust $x $y {
-		EXECUTE println $x " " $y;
+	WHEN: TEST(== $robot "robotA") {
+		RETRIEVE robotA $rX $rY;
+		WHILE: NEXTFACT $FACTS dust $x $y {
+			WHEN: TEST(&& (== $x $rX) (== $y $rY)) {
+				RETRACT dust $x $y;
+				EXECUTE println "Robot A Collected: (" $x ", " $y ")";
+			};
+		};
+	};
+
+	WHEN: TEST(== $robot "robotB") {
+		RETRIEVE robotB $rX $rY;
+		WHILE: NEXTFACT $FACTS dust $x $y {
+			WHEN: TEST(&& (== $x $rX) (== $y $rY)) {
+				RETRACT dust $x $y;
+				EXECUTE println "Robot B Collected: (" $x ", " $y ")";
+			};
+		};
 	};
 
 FAILURE:
