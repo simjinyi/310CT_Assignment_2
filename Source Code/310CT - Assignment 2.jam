@@ -1,7 +1,6 @@
 GOALS:
 	ACHIEVE clean;
 
-
 FACTS:
 	FACT robotA 0 0;
 	FACT robotADirection "right" "up";
@@ -29,7 +28,6 @@ FACTS:
 
 	FACT dustCleaned "false";
 
-
 PLAN:
 {
 NAME: 
@@ -39,9 +37,15 @@ GOAL:
 	ACHIEVE clean;
 	
 BODY:
-	WHILE: TEST(== 1 1) {
+	PERFORM checkWorldDust;
+	RETRIEVE dustCleaned $dustCleaned;
+
+	WHILE: TEST(== $dustCleaned "false") {
 		PERFORM robotAClean;
 		PERFORM robotBClean;
+		
+		PERFORM checkWorldDust;
+		RETRIEVE dustCleaned $dustCleaned;
 	};
 }
 
@@ -109,6 +113,8 @@ BODY:
 
 	PERFORM store "robotA";
 	UPDATE (robotAStepsTaken) (robotAStepsTaken (+ $iteration 1));
+
+	PERFORM collect "robotA";
 
 	RETRIEVE robotA $x $y;
 	EXECUTE println "Robot A: (" $x ", " $y ")";
@@ -178,6 +184,8 @@ BODY:
 
 	PERFORM store "robotB";
 	UPDATE (robotBStepsTaken) (robotBStepsTaken (+ $iteration 1));
+
+	PERFORM collect "robotB";
 
 	RETRIEVE robotB $x $y;
 	EXECUTE println "Robot B: (" $x ", " $y ")";
@@ -289,4 +297,24 @@ BODY:
 
 FAILURE:
 	EXECUTE println "Failed to store the visited location";
+}
+
+PLAN:
+{
+NAME:
+	"Check if all the dusts have been collected"
+
+GOAL:
+	ACHIEVE checkWorldDust;
+
+BODY:
+	ASSIGN $dustCount 0;
+	RETRIEVEALL $FACTS dust $x $y;
+	WHILE: NEXTFACT $FACTS dust $x $y {
+		ASSIGN $dustCount (+ $dustCount 1);
+	};
+
+	WHEN: TEST(<= $dustCount 0) {
+		UPDATE (dustCleaned) (dustCleaned "true");
+	};
 }
