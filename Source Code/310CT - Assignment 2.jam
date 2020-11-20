@@ -33,7 +33,7 @@ GOAL:
 	ACHIEVE clean;
 	
 BODY:
-	ACHIEVE robotAClean;
+	ACHIEVE robotBClean;
 }
 
 PLAN:
@@ -99,7 +99,6 @@ BODY:
 		};
 	
 		PERFORM store "robotA";
-
 		ASSIGN $iteration (+ $iteration 1);
 	};
 
@@ -121,48 +120,63 @@ GOAL:
 BODY:
 	RETRIEVE MAX_X $MAX_X;
 	RETRIEVE MAX_Y $MAX_Y;
+	ASSIGN $iteration 0;
+
+	WHILE: TEST(== 1 1) {
+
+		RETRIEVE robotB $x $y;
+		RETRIEVE robotBDirection $horizontal $vertical;
+		EXECUTE println "Robot B: (" $x ", " $y ")";
+
+		ASSIGN $goVertical "false";
+
+		WHEN: TEST(&& (|| (<= $x 0) (>= $x $MAX_X)) (> $iteration 0)) {
+			WHEN: TEST(== $horizontal "left") {
+				UPDATE (robotBDirection) (robotBDirection "right" $vertical);
+				ASSIGN $goVertical "true";
+			};
+
+			WHEN: TEST(== $horizontal "right") {
+				UPDATE (robotBDirection) (robotBDirection "left" $vertical);
+				ASSIGN $goVertical "true";
+			};
+
+			WHEN: TEST(&& (== $vertical "down") (== $y 0)) {
+				UPDATE (robotBDirection) (robotBDirection $horizontal "up");
+			};
+
+			WHEN: TEST(&& (== $vertical "up") (== $y $MAX_Y)) {
+				UPDATE (robotBDirection) (robotBDirection $horizontal "down");
+			};
+		};
+		
+		RETRIEVE robotB $x $y;
+		RETRIEVE robotBDirection $horizontal $vertical;
+
+		// Take one additional step vertically
+		WHEN: TEST(== $goVertical "true") {
+			PERFORM move "robotB" $vertical;
+			PERFORM store "robotB";
+
+			RETRIEVE robotB $x $y;
+			EXECUTE println "Robot B: (" $x ", " $y ")";
+			ASSIGN $goVertical "false";
+		};
+
+		WHEN: TEST(&& (== $horizontal "right") (< $x $MAX_X)) {
+			PERFORM move "robotB" "right";
+		};
+
+		WHEN: TEST(&& (== $horizontal "left") (> $x 0)) {
+			PERFORM move "robotB" "left";
+		};
+	
+		PERFORM store "robotB";
+		ASSIGN $iteration (+ $iteration 1);
+	};
 
 	RETRIEVE robotB $x $y;
 	EXECUTE println "Robot B: (" $x ", " $y ")";
-	RETRIEVE robotBDirection $direction;
-	ASSIGN $finalX 0;
-
-	DO {
-
-		WHEN: TEST(&& (>= $x $MAX_X) (!= $y 0)) {
-			UPDATE (robotBDirection) (robotBDirection "left");
-			RETRIEVE robotBDirection $direction;
-			PERFORM move "robotB" "up";
-
-			WHEN: TEST(== $y $MAX_Y) {
-				ASSIGN $finalX (+ $finalX 1);
-			};
-		};
-		
-		WHEN: TEST(<= $x 0) {
-			UPDATE (robotBDirection) (robotBDirection "right");
-			RETRIEVE robotBDirection $direction;
-			PERFORM move "robotB" "up";
-
-			WHEN: TEST(== $y $MAX_Y) {
-				ASSIGN $finalX (+ $finalX 1);
-			};
-		};
-
-		WHEN: TEST(== $direction "right") {
-			PERFORM move "robotB" "right";
-		};
-		
-		WHEN: TEST(== $direction "left") {
-			PERFORM move "robotB" "left";
-		};
-
-		RETRIEVE robotB $x $y;
-		WHEN: TEST(== $y $MAX_Y) {
-			ASSIGN $finalX (+ $finalX 1);
-		};
-
-	} WHILE: TEST(&& (<= $y $MAX_Y) (< $finalX $MAX_X));
 	
 FAILURE:
 	EXECUTE println "Failed to move the robot";
