@@ -26,6 +26,7 @@ FACTS:
 	FACT MAX_X 7;
 	FACT MAX_Y 6;
 
+	FACT allVisited "false";
 	FACT dustCleaned "false";
 
 PLAN:
@@ -37,15 +38,25 @@ GOAL:
 	ACHIEVE clean;
 	
 BODY:
-	PERFORM checkWorldDust;
+	PERFORM checkWorld;
 	RETRIEVE dustCleaned $dustCleaned;
+	RETRIEVE allVisited $allVisited;
 
-	WHILE: TEST(== $dustCleaned "false") {
+	WHILE: TEST(&& (== $dustCleaned "false") (== $allVisited "false")) {
 		PERFORM robotAClean;
 		PERFORM robotBClean;
 		
-		PERFORM checkWorldDust;
+		PERFORM checkWorld;
 		RETRIEVE dustCleaned $dustCleaned;
+		RETRIEVE allVisited $allVisited;
+	};
+
+	WHEN: TEST(== $dustCleaned "true") {
+		EXECUTE println "Exiting: All dusts cleaned";
+	};
+
+	WHEN: TEST(== $allVisited "true") {
+		EXECUTE println "Exiting: Scanned every grid";
 	};
 }
 
@@ -70,6 +81,12 @@ BODY:
 
 	ASSIGN $goVertical "false";
 
+	WHEN: TEST(<= $iteration 0) {
+		EXECUTE println "Robot A Started: (" $x ", " $y ")";
+		PERFORM collect "robotA";
+		PERFORM store "robotA";
+	};
+
 	WHEN: TEST(&& (|| (<= $x 0) (>= $x $MAX_X)) (> $iteration 0)) {
 		WHEN: TEST(== $horizontal "left") {
 			UPDATE (robotADirection) (robotADirection "right" $vertical);
@@ -89,6 +106,18 @@ BODY:
 			UPDATE (robotADirection) (robotADirection $horizontal "down");
 		};
 	};
+
+	WHEN: TEST(|| (&& (== $vertical "up") (<= (+ $y 1) $MAX_Y)) (&& (== $vertical "down") (>= (- $y 1) 0))) {
+		WHEN: TEST(&& (== $horizontal "left") (FACT visited (- $x 1) $y)) {
+			UPDATE (robotADirection) (robotADirection "right" $vertical);
+			ASSIGN $goVertical "true";
+		};
+
+		WHEN: TEST(&& (== $horizontal "right") (FACT visited (+ $x 1) $y)) {
+			UPDATE (robotADirection) (robotADirection "left" $vertical);
+			ASSIGN $goVertical "true";
+		};
+	};
 	
 	RETRIEVE robotA $x $y;
 	RETRIEVE robotADirection $horizontal $vertical;
@@ -96,6 +125,7 @@ BODY:
 	// Take one additional step vertically
 	WHEN: TEST(== $goVertical "true") {
 		PERFORM move "robotA" $vertical;
+		PERFORM collect "robotA";
 		PERFORM store "robotA";
 
 		RETRIEVE robotA $x $y;
@@ -111,10 +141,9 @@ BODY:
 		PERFORM move "robotA" "left";
 	};
 
+	PERFORM collect "robotA";
 	PERFORM store "robotA";
 	UPDATE (robotAStepsTaken) (robotAStepsTaken (+ $iteration 1));
-
-	PERFORM collect "robotA";
 
 	RETRIEVE robotA $x $y;
 	EXECUTE println "Robot A: (" $x ", " $y ")";
@@ -141,13 +170,19 @@ BODY:
 
 	ASSIGN $goVertical "false";
 
+	WHEN: TEST(<= $iteration 0) {
+		EXECUTE println "Robot B Started: (" $x ", " $y ")";
+		PERFORM collect "robotB";
+		PERFORM store "robotB";
+	};
+
 	WHEN: TEST(&& (|| (<= $x 0) (>= $x $MAX_X)) (> $iteration 0)) {
-		WHEN: TEST(== $horizontal "left") {
+		WHEN: TEST(|| (== $horizontal "left") (FACT visited (- $x 1) $y)) {
 			UPDATE (robotBDirection) (robotBDirection "right" $vertical);
 			ASSIGN $goVertical "true";
 		};
 
-		WHEN: TEST(== $horizontal "right") {
+		WHEN: TEST(|| (== $horizontal "right") (FACT visited (+ $x 1) $y)) {
 			UPDATE (robotBDirection) (robotBDirection "left" $vertical);
 			ASSIGN $goVertical "true";
 		};
@@ -160,6 +195,18 @@ BODY:
 			UPDATE (robotBDirection) (robotBDirection $horizontal "down");
 		};
 	};
+
+	WHEN: TEST(|| (&& (== $vertical "up") (<= (+ $y 1) $MAX_Y)) (&& (== $vertical "down") (>= (- $y 1) 0))) {
+		WHEN: TEST(&& (== $horizontal "left") (FACT visited (- $x 1) $y)) {
+			UPDATE (robotBDirection) (robotBDirection "right" $vertical);
+			ASSIGN $goVertical "true";
+		};
+
+		WHEN: TEST(&& (== $horizontal "right") (FACT visited (+ $x 1) $y)) {
+			UPDATE (robotBDirection) (robotBDirection "left" $vertical);
+			ASSIGN $goVertical "true";
+		};
+	};
 	
 	RETRIEVE robotB $x $y;
 	RETRIEVE robotBDirection $horizontal $vertical;
@@ -167,6 +214,7 @@ BODY:
 	// Take one additional step vertically
 	WHEN: TEST(== $goVertical "true") {
 		PERFORM move "robotB" $vertical;
+		PERFORM collect "robotB";
 		PERFORM store "robotB";
 
 		RETRIEVE robotB $x $y;
@@ -182,10 +230,9 @@ BODY:
 		PERFORM move "robotB" "left";
 	};
 
+	PERFORM collect "robotB";
 	PERFORM store "robotB";
 	UPDATE (robotBStepsTaken) (robotBStepsTaken (+ $iteration 1));
-
-	PERFORM collect "robotB";
 
 	RETRIEVE robotB $x $y;
 	EXECUTE println "Robot B: (" $x ", " $y ")";
@@ -291,9 +338,16 @@ BODY:
 	};
 
 	WHEN: TEST(== $robot "robotB") {
-		RETRIEVE robotA $x $y;
+		RETRIEVE robotB $x $y;
 		ASSERT visited $x $y;
 	};
+
+	// EXECUTE println "\n--- Visited ---";
+	// RETRIEVEALL $FACTS visited $x $y;
+	// WHILE: NEXTFACT $FACTS visited $x $y {
+	// 	EXECUTE println "Visited: (" $x ", " $y ")";
+	// };
+	// EXECUTE println "--- End Visited ---\n";
 
 FAILURE:
 	EXECUTE println "Failed to store the visited location";
@@ -302,10 +356,10 @@ FAILURE:
 PLAN:
 {
 NAME:
-	"Check if all the dusts have been collected"
+	"Check and update the attributes of the world"
 
 GOAL:
-	ACHIEVE checkWorldDust;
+	ACHIEVE checkWorld;
 
 BODY:
 	ASSIGN $dustCount 0;
@@ -314,7 +368,25 @@ BODY:
 		ASSIGN $dustCount (+ $dustCount 1);
 	};
 
+	RETRIEVE MAX_X $MAX_X;
+	RETRIEVE MAX_Y $MAX_Y;
+	ASSIGN $visitedCount 0;
+	ASSIGN $totalGrid (* (+ $MAX_X 1) (+ $MAX_Y 1));
+
+	RETRIEVEALL $FACTS visited $x $y;
+	WHILE: NEXTFACT $FACTS visited $x $y {
+		ASSIGN $visitedCount (+ $visitedCount 1);
+	};
+
+	// EXECUTE println "\n--- Visited ---\n";
+	// EXECUTE println $visitedCount " / " $totalGrid;
+	// EXECUTE println "\n--- End ---\n";
+
 	WHEN: TEST(<= $dustCount 0) {
 		UPDATE (dustCleaned) (dustCleaned "true");
+	};
+
+	WHEN: TEST(>= $visitedCount $totalGrid) {
+		UPDATE (allVisited) (allVisited "true");
 	};
 }
