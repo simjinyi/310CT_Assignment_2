@@ -89,8 +89,15 @@ BODY:
 			EXECUTE println "Robot A: (" $x ", " $y ")";
 			ASSIGN $goVertical "false";
 		};
-		
-		PERFORM move "robotA" $horizontal;
+
+		WHEN: TEST(&& (== $horizontal "right") (< $x $MAX_X)) {
+			PERFORM move "robotA" "right";
+		};
+
+		WHEN: TEST(&& (== $horizontal "left") (> $x 0)) {
+			PERFORM move "robotA" "left";
+		};
+	
 		PERFORM store "robotA";
 
 		ASSIGN $iteration (+ $iteration 1);
