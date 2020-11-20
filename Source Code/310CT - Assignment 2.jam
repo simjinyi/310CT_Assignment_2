@@ -1,15 +1,30 @@
-GOALS:
-	ACHIEVE clean;
+/*
+ * Name: Sim Jin Yi (P17008744 / 9658521)
+ * Date: October 22, 2020
+ * Description: 310CT - Assignment 2
+ */
 
+/* BEGIN: Top-level Goals */
+GOALS:
+	ACHIEVE clean :UTILITY 10;
+	ACHIEVE return :UTILITY 1;
+/* END: Top-level Goals */
+
+
+/* BEGIN: World Model */
 FACTS:
+
+	// Robot A (starting (0, 0))
 	FACT robotA 0 0;
 	FACT robotADirection "right" "up";
 	FACT robotAStepsTaken 0;
 
+	// Robot B (starting (7, 0))
 	FACT robotB 7 0;
 	FACT robotBDirection "left" "up";
 	FACT robotBStepsTaken 0;
 	
+	// List of dusts on the grid
 	FACT dust 3 0;
 	FACT dust 6 0;
 	FACT dust 2 1;
@@ -22,23 +37,42 @@ FACTS:
 	FACT dust 5 5;
 	FACT dust 3 6;
 
+	// List of obstacles on the grid
+	FACT obstacle 4 1;
+
+	// Exit coordinate and the boundary of the grid
 	FACT exit 7 6;
 	FACT MAX_X 7;
 	FACT MAX_Y 6;
 
+	// Whether if the all the grids were visited and the dusts were cleaned
 	FACT allVisited "false";
 	FACT dustCleaned "false";
+/* END: World Model */
+
 
 PLAN:
 {
 NAME: 
-	"Clean"
+	"Clean the Dusts in the Grid"
+
+DOCUMENTATION:
+	"The plan achieves the top-level goal to clean the dusts in the grid,
+		- The robots will attempt to clean until either:
+			- All the dusts in the grid were cleaned.
+			- All the cells in the grid were visited once.
+		- Both robot will make a move in each iteration.
+		- The checking on the status of the grid as follow will be performed every iteration:
+			- Whether if all the dusts in the grid were cleaned.
+			- Whether if all the cells in the grid were visited."
 	
 GOAL:
 	ACHIEVE clean;
 	
 BODY:
-	PERFORM checkWorld;
+
+	// Perform the initial check on the status of the grid
+	PERFORM check;
 	RETRIEVE dustCleaned $dustCleaned;
 	RETRIEVE allVisited $allVisited;
 
@@ -46,7 +80,7 @@ BODY:
 		PERFORM robotAClean;
 		PERFORM robotBClean;
 		
-		PERFORM checkWorld;
+		PERFORM check;
 		RETRIEVE dustCleaned $dustCleaned;
 		RETRIEVE allVisited $allVisited;
 	};
@@ -59,6 +93,73 @@ BODY:
 		EXECUTE println "Exiting: Scanned every grid";
 	};
 }
+
+PLAN:
+{
+NAME:
+	"Return"
+
+GOAL:
+	ACHIEVE return;
+
+BODY:
+	RETRIEVE exit $exitX $exitY;
+
+	RETRIEVE robotA $x $y;
+	WHEN: TEST(|| (!= $x $exitX) (!= $y $exitY)) {
+		WHILE: TEST(< $x $exitX) {
+			PERFORM move "robotA" "right";
+			RETRIEVE robotA $x $y;
+			EXECUTE println "Robot A: (" $x ", " $y ")";
+		};
+
+		WHILE: TEST(> $x $exitX) {
+			PERFORM move "robotA" "left";
+			RETRIEVE robotA $x $y;
+			EXECUTE println "Robot A: (" $x ", " $y ")";
+		};
+
+		WHILE: TEST(< $y $exitY) {
+			PERFORM move "robotA" "up";
+			RETRIEVE robotA $x $y;
+			EXECUTE println "Robot A: (" $x ", " $y ")";
+		};
+
+		WHILE: TEST(> $y $exitY) {
+			PERFORM move "robotA" "down";
+			RETRIEVE robotA $x $y;
+			EXECUTE println "Robot A: (" $x ", " $y ")";
+		};
+	};
+
+	RETRIEVE robotB $x $y;
+	WHEN: TEST(|| (!= $x $exitX) (!= $y $exitY)) {
+		WHILE: TEST(< $x $exitX) {
+			PERFORM move "robotB" "right";
+			RETRIEVE robotB $x $y;
+			EXECUTE println "Robot B: (" $x ", " $y ")";
+		};
+
+		WHILE: TEST(> $x $exitX) {
+			PERFORM move "robotB" "left";
+			RETRIEVE robotB $x $y;
+			EXECUTE println "Robot B: (" $x ", " $y ")";
+		};
+
+		WHILE: TEST(< $y $exitY) {
+			PERFORM move "robotB" "up";
+			RETRIEVE robotB $x $y;
+			EXECUTE println "Robot B: (" $x ", " $y ")";
+		};
+
+		WHILE: TEST(> $y $exitY) {
+			PERFORM move "robotB" "down";
+			RETRIEVE robotB $x $y;
+			EXECUTE println "Robot B: (" $x ", " $y ")";
+		};
+	};
+}
+
 
 PLAN:
 {
@@ -107,7 +208,8 @@ BODY:
 		};
 	};
 
-	WHEN: TEST(|| (&& (== $vertical "up") (<= (+ $y 1) $MAX_Y)) (&& (== $vertical "down") (>= (- $y 1) 0))) {
+	RETRIEVE allVisited $allVisited;
+	WHEN: TEST(== $allVisited "false") {
 		WHEN: TEST(&& (== $horizontal "left") (FACT visited (- $x 1) $y)) {
 			UPDATE (robotADirection) (robotADirection "right" $vertical);
 			ASSIGN $goVertical "true";
@@ -196,7 +298,8 @@ BODY:
 		};
 	};
 
-	WHEN: TEST(|| (&& (== $vertical "up") (<= (+ $y 1) $MAX_Y)) (&& (== $vertical "down") (>= (- $y 1) 0))) {
+	RETRIEVE allVisited $allVisited;
+	WHEN: TEST(== $allVisited "false") {
 		WHEN: TEST(&& (== $horizontal "left") (FACT visited (- $x 1) $y)) {
 			UPDATE (robotBDirection) (robotBDirection "right" $vertical);
 			ASSIGN $goVertical "true";
@@ -359,7 +462,7 @@ NAME:
 	"Check and update the attributes of the world"
 
 GOAL:
-	ACHIEVE checkWorld;
+	ACHIEVE check;
 
 BODY:
 	ASSIGN $dustCount 0;
