@@ -7,6 +7,7 @@
 /* BEGIN: Top-level Goals */
 GOALS:
 	ACHIEVE clean :UTILITY 10;
+	ACHIEVE return :UTILITY 1;
 /* END: Top-level Goals */
 
 
@@ -107,13 +108,75 @@ BODY:
 	WHEN: TEST(== $dustCleaned "true") {
 		EXECUTE print "(All Dusts Collected)";
 	};
-	
+
 	EXECUTE println "";
 
 FAILURE:
 	EXECUTE println "System: Failed to Clean";
 }
 /* END: PLAN clean */
+
+
+/* BEGIN: PLAN return */
+PLAN:
+{
+NAME: 
+	"Navigate the robots to the exit"
+
+DOCUMENTATION:
+	"The plan navigates the robots to the exit after,
+		- All the dusts were cleaned.
+		- The time limit to clean had expired.
+	If there exists obstacles blocking the pathway to the exit,
+		- The plan continues to try to navigate the robots to the exit.
+		- The plan stops after the time limit had expired, whereby the exit was not achievable in time."
+	
+GOAL:
+	ACHIEVE return;
+	
+BODY:
+
+	// Assign the maximum iterations (time limit) to try to navigate the robots to the exit
+	EXECUTE println "System: Exit Initiated";
+	RETRIEVE MAX_X $MAX_X;
+	RETRIEVE MAX_Y $MAX_Y;
+	ASSIGN $MAX_TRIES (* $MAX_X $MAX_Y 10);
+	ASSIGN $iteration 0;
+
+	// Retrieve the location of the robots and exit
+	RETRIEVE robotA $aX $aY;
+	RETRIEVE robotB $bX $bY;
+	RETRIEVE exit $exitX $exitY;
+
+	// Loop to keep the robot walking towards the exit until,
+	// 	- Both robots have exited.
+	// 	- The time limit had expired.
+	WHILE: TEST(&& (|| (!= $aX $exitX) (!= $aY $exitY) (!= $bX $exitX) (!= $bY $exitY)) (< $iteration $MAX_TRIES)) {
+
+		// Advances one step for both robots towards the exit
+		PERFORM quit "robotA";
+		PERFORM quit "robotB";
+
+		// Retrieve the location of the robots
+		RETRIEVE robotA $aX $aY;
+		RETRIEVE robotB $bX $bY;
+		ASSIGN $iteration (+ $iteration 1);
+	};
+
+	WHEN: TEST(&& (== $aX $exitX) (== $aY $exitY)) {
+		EXECUTE println "Robot A: Exited at (" $exitX ", " $exitY ")";
+	};
+
+	WHEN: TEST(&& (== $bX $exitX) (== $bY $exitY)) {
+		EXECUTE println "Robot B: Exited at (" $exitX ", " $exitY ")";
+	};
+
+	EXECUTE println "System: Terminated";
+
+FAILURE:
+	EXECUTE println "System: Failed to Exit";
+}
+/* END: PLAN return */
 
 
 /* BEGIN: PLAN run $robot */
@@ -374,6 +437,148 @@ FAILURE:
 /* END: PLAN run $robot */
 
 
+/* BEGIN: PLAN quit $robot */
+PLAN:
+{
+NAME: 
+	"Decide and advances the selected robot for one step towards the exit"
+
+DOCUMENTATION:
+	"The plan attempts to navigate the robot towards the exit using heuristics,
+		- The heuristic tries to move the robot along the obstacles or boundaries.
+		- The movement prioritize the horizontal motion towards the right.
+		- This helps in ensuring that the robot gets closer to the exit even when blocked by obstacles."
+	
+GOAL:
+	ACHIEVE quit $robot;
+	
+BODY:
+	RETRIEVE MAX_X $MAX_X;
+	RETRIEVE MAX_Y $MAX_Y;
+	RETRIEVE exit $exitX $exitY;
+
+	// Robot A selected
+	WHEN: TEST(== $robot "robotA") {
+		RETRIEVE robotA $x $y;
+
+		// Check if the robot is already at the exit
+		// Perform the movement only if the robot is not already at the exit
+		WHEN: TEST(|| (!= $x $exitX) (!= $y $exitY)) {
+
+
+			/* BEGIN: Robot Movement Logic */
+			// Variables to store the valid moves
+			ASSIGN $up "true";
+			ASSIGN $down "true";
+			ASSIGN $left "true";
+			ASSIGN $right "true";
+			ASSIGN $moved "false";
+
+			// Check which are the valid moves
+			WHEN: TEST(|| (<= $x 0) (FACT obstacle (- $x 1) $y)) {
+				ASSIGN $left "false";
+			};
+
+			WHEN: TEST(|| (>= $x $MAX_X) (FACT obstacle (+ $x 1) $y)) {
+				ASSIGN $right "false";
+			};
+
+			WHEN: TEST(|| (<= $y 0) (FACT obstacle $x (- $y 1))) {
+				ASSIGN $down "false";
+			};
+
+			WHEN: TEST(|| (>= $y $MAX_Y) (FACT obstacle $x (+ $y 1))) {
+				ASSIGN $up "false";
+			};
+
+			// The following logic helps to navigate the robot in moving along the obstacles or boundaries
+			// Attempt to move towards the right if possible
+			WHEN: TEST(&& (== $right "true") (== $moved "false")) {
+				PERFORM move "robotA" "right";
+				ASSIGN $moved "true";
+			};
+
+			// Otherwise, attempt to move upwards
+			WHEN: TEST(&& (== $up "true") (== $moved "false")) {
+				PERFORM move "robotA" "up";
+				ASSIGN $moved "true";
+			};
+
+			// Otherwise, try to move towards the left
+			WHEN: TEST(&& (== $left "true") (== $moved "false")) {
+				PERFORM move "robotA" "left";
+				ASSIGN $moved "true";
+			};
+
+			// If all else fail, move towards the bottom
+			// This is a heuristic in hope to find a path to the exit
+			WHEN: TEST(&& (== $down "true") (== $moved "false")) {
+				PERFORM move "robotA" "down";
+				ASSIGN $moved "true";
+			};
+			/* END: Robot Movement Logic */
+
+
+		};
+	};
+	
+	// Please refer to the comments in the section above
+	// The code is identical but applicable for Robot B
+	WHEN: TEST(== $robot "robotB") {
+		RETRIEVE robotB $x $y;
+
+		WHEN: TEST(|| (!= $x $exitX) (!= $y $exitY)) {
+
+			ASSIGN $up "true";
+			ASSIGN $down "true";
+			ASSIGN $left "true";
+			ASSIGN $right "true";
+			ASSIGN $moved "false";
+
+			WHEN: TEST(|| (<= $x 0) (FACT obstacle (- $x 1) $y)) {
+				ASSIGN $left "false";
+			};
+
+			WHEN: TEST(|| (>= $x $MAX_X) (FACT obstacle (+ $x 1) $y)) {
+				ASSIGN $right "false";
+			};
+
+			WHEN: TEST(|| (<= $y 0) (FACT obstacle $x (- $y 1))) {
+				ASSIGN $down "false";
+			};
+
+			WHEN: TEST(|| (>= $y $MAX_Y) (FACT obstacle $x (+ $y 1))) {
+				ASSIGN $up "false";
+			};
+
+			WHEN: TEST(&& (== $right "true") (== $moved "false")) {
+				PERFORM move "robotB" "right";
+				ASSIGN $moved "true";
+			};
+
+			WHEN: TEST(&& (== $up "true") (== $moved "false")) {
+				PERFORM move "robotB" "up";
+				ASSIGN $moved "true";
+			};
+
+			WHEN: TEST(&& (== $left "true") (== $moved "false")) {
+				PERFORM move "robotB" "left";
+				ASSIGN $moved "true";
+			};
+
+			WHEN: TEST(&& (== $down "true") (== $moved "false")) {
+				PERFORM move "robotB" "down";
+				ASSIGN $moved "true";
+			};
+		};
+	};
+	
+FAILURE:
+	EXECUTE println "System: Failed to Quit - " $robot;
+}
+/* END: PLAN quit $robot */
+
+
 /* BEGIN: PLAN move $robot $direction */
 PLAN:
 {
@@ -474,7 +679,7 @@ BODY:
 		WHILE: NEXTFACT $FACTS dust $x $y {
 			WHEN: TEST(&& (== $x $rX) (== $y $rY)) {
 				RETRACT dust $x $y;
-				EXECUTE println "Robot A: Collected Dust at (" $x ", " $y ")";
+				EXECUTE println "Robot A: Dust Collected at (" $x ", " $y ")";
 			};
 		};
 	};
@@ -484,7 +689,7 @@ BODY:
 		WHILE: NEXTFACT $FACTS dust $x $y {
 			WHEN: TEST(&& (== $x $rX) (== $y $rY)) {
 				RETRACT dust $x $y;
-				EXECUTE println "Robot B: Collected Dust at (" $x ", " $y ")";
+				EXECUTE println "Robot B: Dust Collected at (" $x ", " $y ")";
 			};
 		};
 	};
