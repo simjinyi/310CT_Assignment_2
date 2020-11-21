@@ -16,13 +16,14 @@ FACTS:
 	// Robot A (starting (0, 0))
 	FACT robotA 0 0;
 	FACT robotADirection "right";
+	FACT robotASteps 0;
 
 	// Robot B (starting (7, 0))
 	FACT robotB 7 0;
-	FACT robotBDirection "left" "up";
-	FACT robotBStepsTaken 0;
+	FACT robotBDirection "left";
+	FACT robotBSteps 0;
 	
-	// List of dusts on the grid
+	// List of dusts
 	FACT dust 3 0;
 	FACT dust 6 0;
 	FACT dust 2 1;
@@ -35,12 +36,16 @@ FACTS:
 	FACT dust 5 5;
 	FACT dust 3 6;
 
-	// List of obstacles on the grid
-	FACT obstacle 4 1;
-	FACT obstacle 4 2;
+	// List of obstacles
+	// The dusts that are surrounded by obstacles cannot be cleaned
+	// The robot will attempt to search through the grid for an entry
+	// But if none, the robot will give up after the time limit (MAX_X * MAX_Y * 10)
+	// FACT obstacle 4 1;
 
-	// Exit coordinate and the boundary of the grid
+	// Exit location
 	FACT exit 7 6;
+
+	// Grid boundaries
 	FACT MAX_X 7;
 	FACT MAX_Y 6;
 
@@ -49,386 +54,427 @@ FACTS:
 /* END: World Model */
 
 
+/* BEGIN: PLAN clean */
 PLAN:
 {
 NAME: 
-	"Clean the Dusts in the Grid"
+	"Walkthrough the grids and clean the dusts"
 
 DOCUMENTATION:
-	"The plan achieves the top-level goal to clean the dusts in the grid,
-		- The robots will attempt to clean until either:
-			- All the dusts in the grid were cleaned.
-			- All the cells in the grid were visited once.
+	"The plan achieves the top-level goal to clean the dusts,
+		- The robots will attempt to clean until either,
+			- All the dusts were cleaned.
+			- The time limit had expired.
 		- Both robot will make a move in each iteration.
 		- The checking on the status of the grid as follow will be performed every iteration:
-			- Whether if all the dusts in the grid were cleaned.
-			- Whether if all the cells in the grid were visited."
+			- Whether if all the dusts were cleaned.
+			- Whether if the time limit had expired."
 	
 GOAL:
 	ACHIEVE clean;
 	
 BODY:
 
-	// Perform the initial check on the status of the grid
-	PERFORM check;
-	RETRIEVE dustCleaned $dustCleaned;
+	EXECUTE println "System: Started";
 
-	WHILE: TEST(== $dustCleaned "false") {
-		PERFORM robotAClean;
-		// PERFORM robotBClean;
+	// Perform the initial check on the status
+	PERFORM check;
+
+	// Obtain the grid boundaries and the time limit to clean
+	RETRIEVE dustCleaned $dustCleaned;
+	RETRIEVE MAX_X $MAX_X;
+	RETRIEVE MAX_Y $MAX_Y;
+
+	ASSIGN $MAX_TRIES (* $MAX_X $MAX_Y 10);
+	ASSIGN $iteration 0;
+
+	// Loop to keep the robot roaming around the grid until,
+	// 	- All the dusts were cleaned.
+	// 	- The time limit had expired.
+	WHILE: TEST(&& (== $dustCleaned "false") (< $iteration $MAX_TRIES)) {
+
+		// Advances one step for both robot
+		PERFORM run "robotA";
+		PERFORM run "robotB";
 		
+		// Check and retrieve the status of the grid
 		PERFORM check;
 		RETRIEVE dustCleaned $dustCleaned;
+		ASSIGN $iteration (+ $iteration 1);
 	};
 
+	EXECUTE print "System: Exiting ";
 	WHEN: TEST(== $dustCleaned "true") {
-		EXECUTE println "Exiting: All dusts cleaned";
+		EXECUTE print "(All Dusts Collected)";
 	};
+	
+	EXECUTE println "";
+
+FAILURE:
+	EXECUTE println "System: Failed to Clean";
 }
-
-PLAN:
-{
-NAME:
-	"Return"
-
-GOAL:
-	ACHIEVE return;
-
-BODY:
-	RETRIEVE exit $exitX $exitY;
-
-	RETRIEVE robotA $x $y;
-	WHEN: TEST(|| (!= $x $exitX) (!= $y $exitY)) {
-		WHILE: TEST(< $x $exitX) {
-			PERFORM move "robotA" "right";
-			RETRIEVE robotA $x $y;
-			EXECUTE println "Robot A: (" $x ", " $y ")";
-		};
-
-		WHILE: TEST(> $x $exitX) {
-			PERFORM move "robotA" "left";
-			RETRIEVE robotA $x $y;
-			EXECUTE println "Robot A: (" $x ", " $y ")";
-		};
-
-		WHILE: TEST(< $y $exitY) {
-			PERFORM move "robotA" "up";
-			RETRIEVE robotA $x $y;
-			EXECUTE println "Robot A: (" $x ", " $y ")";
-		};
-
-		WHILE: TEST(> $y $exitY) {
-			PERFORM move "robotA" "down";
-			RETRIEVE robotA $x $y;
-			EXECUTE println "Robot A: (" $x ", " $y ")";
-		};
-	};
-
-	RETRIEVE robotB $x $y;
-	WHEN: TEST(|| (!= $x $exitX) (!= $y $exitY)) {
-		WHILE: TEST(< $x $exitX) {
-			PERFORM move "robotB" "right";
-			RETRIEVE robotB $x $y;
-			EXECUTE println "Robot B: (" $x ", " $y ")";
-		};
-
-		WHILE: TEST(> $x $exitX) {
-			PERFORM move "robotB" "left";
-			RETRIEVE robotB $x $y;
-			EXECUTE println "Robot B: (" $x ", " $y ")";
-		};
-
-		WHILE: TEST(< $y $exitY) {
-			PERFORM move "robotB" "up";
-			RETRIEVE robotB $x $y;
-			EXECUTE println "Robot B: (" $x ", " $y ")";
-		};
-
-		WHILE: TEST(> $y $exitY) {
-			PERFORM move "robotB" "down";
-			RETRIEVE robotB $x $y;
-			EXECUTE println "Robot B: (" $x ", " $y ")";
-		};
-	};
-}
+/* END: PLAN clean */
 
 
+/* BEGIN: PLAN run $robot */
 PLAN:
 {
 NAME: 
-	"Navigate robot A through every grid"
+	"Decide and advances the selected robot for one step"
 
 DOCUMENTATION:
-	""
+	"The plan achieves the sub-goal to advance the selected robot for one step,
+		- The plan selects the best cell for the selected robot to advance next based on heuristics.
+			- The best cell is selected based on,
+				- Whether if the cell was visited.
+				- Whether if the next cell is still within the boundaries of the grid.
+				- Whether if the next cell is an obstacle.
+		- Once there is no better cell, the plan advances the robot randomly within the grid.
+		- This hopes that the robot will eventually find an uncollected dust.
+		- In the process, the robot will:
+			- Update the fact on the visited cells.
+			- Attempt to check and collect the dusts."
 	
 GOAL:
-	ACHIEVE robotAClean;
+	ACHIEVE run $robot;
 	
 BODY:
 	RETRIEVE MAX_X $MAX_X;
 	RETRIEVE MAX_Y $MAX_Y;
 
-	RETRIEVE robotA $x $y;
+	// Robot A selected
+	WHEN: TEST(== $robot "robotA") {
+		RETRIEVE robotA $x $y;
+		RETRIEVE robotASteps $iteration;
 
-	// First iteration
-	WHEN: TEST(<= $iteration 0) {
-		EXECUTE println "Robot A Started: (" $x ", " $y ")";
-		PERFORM collect "robotA";
-		PERFORM store "robotA";
-	};
+		WHEN: TEST(<= $iteration 0) {
+			EXECUTE println "Robot A: Started at (" $x ", " $y ")";
+			PERFORM collect "robotA";
+			PERFORM store "robotA";
+		};
 
-	ASSIGN $up "true";
-	ASSIGN $down "true";
-	ASSIGN $left "true";
-	ASSIGN $right "true";
-	ASSIGN $moved "false";
 
-	WHEN: TEST(|| (<= $x 0) (FACT visited (- $x 1) $y) (FACT obstacle (- $x 1) $y)) {
-		ASSIGN $left "false";
-	};
+		/* BEGIN: Robot Movement Logic */
+		// Variables to store the valid moves
+		ASSIGN $up "true";
+		ASSIGN $down "true";
+		ASSIGN $left "true";
+		ASSIGN $right "true";
+		ASSIGN $moved "false";
 
-	WHEN: TEST(|| (>= $x $MAX_X) (FACT visited (+ $x 1) $y) (FACT obstacle (+ $x 1) $y)) {
-		ASSIGN $right "false";
-	};
+		// Check which direction is valid and can be moved to based on,
+		// - Whether if the robot is at the boundary.
+		// - Whether if the cell to be advanced to was visited.
+		// - Whether if the cell to be advanced to was blocked by an obstacle.
+		WHEN: TEST(|| (<= $x 0) (FACT visited (- $x 1) $y) (FACT obstacle (- $x 1) $y)) {
+			ASSIGN $left "false";
+		};
 
-	WHEN: TEST(|| (<= $y 0) (FACT visited $x (- $y 1)) (FACT obstacle $x (- $y 1))) {
-		ASSIGN $down "false";
-	};
+		WHEN: TEST(|| (>= $x $MAX_X) (FACT visited (+ $x 1) $y) (FACT obstacle (+ $x 1) $y)) {
+			ASSIGN $right "false";
+		};
 
-	WHEN: TEST(|| (>= $y $MAX_Y) (FACT visited $x (+ $y 1)) (FACT obstacle $x (+ $y 1))) {
-		ASSIGN $up "false";
-	};
+		WHEN: TEST(|| (<= $y 0) (FACT visited $x (- $y 1)) (FACT obstacle $x (- $y 1))) {
+			ASSIGN $down "false";
+		};
 
-	WHEN: TEST(&& (== $up "false") (== $down "false") (== $left "false") (== $right "false")) {
-		WHEN: TEST(<= $x 0) { 
-			UPDATE (robotADirection) (robotADirection "right");
+		WHEN: TEST(|| (>= $y $MAX_Y) (FACT visited $x (+ $y 1)) (FACT obstacle $x (+ $y 1))) {
+			ASSIGN $up "false";
+		};
+
+		// Check if there is no better move
+		WHEN: TEST(&& (== $up "false") (== $down "false") (== $left "false") (== $right "false")) {
+
+			EXECUTE println "Robot A: No Better Move, Attempting a Random Move";
+
+			// If the robot is at the boundary, move in the opposite direction
+			WHEN: TEST(<= $x 0) { 
+				UPDATE (robotADirection) (robotADirection "right");
+				ASSIGN $moved "true";
+			};
+
+			WHEN: TEST(<= $y 0) { 
+				UPDATE (robotADirection) (robotADirection "up");
+				ASSIGN $moved "true"; 
+			};
+
+			WHEN: TEST(>= $x $MAX_X) { 
+				UPDATE (robotADirection) (robotADirection "left"); 
+				ASSIGN $moved "true";
+			};
+
+			WHEN: TEST(>= $y $MAX_Y) { 
+				UPDATE (robotADirection) (robotADirection "down");
+				ASSIGN $moved "true"; 
+			};
+
+			// If the robot is not at the boundary, attempt to make a move randomly
+			WHEN: TEST(== $moved "false") {
+				DO_ANY { 
+					UPDATE (robotADirection) (robotADirection "right"); 
+					ASSIGN $moved "true"; 
+				} { 
+					UPDATE (robotADirection) (robotADirection "up"); 
+					ASSIGN $moved "true"; 
+				} { 
+					UPDATE (robotADirection) (robotADirection "left"); 
+					ASSIGN $moved "true"; 
+				} { 
+					UPDATE (robotADirection) (robotADirection "down"); 
+					ASSIGN $moved "true"; 
+				};
+			};
+		};
+
+		// Attempt to move rightward whenever possible
+		WHEN: TEST(&& (== $right "true") (== $moved "false")) {
+			UPDATE (robotADirection) (robotADirection "right"); 
 			ASSIGN $moved "true";
 		};
 
-		WHEN: TEST(<= $y 0) { 
-			UPDATE (robotADirection) (robotADirection "up");
-			ASSIGN $moved "true"; 
+		// Otherwise, attempt to move upward
+		WHEN: TEST(&& (== $up "true") (== $moved "false")) {
+			UPDATE (robotADirection) (robotADirection "up"); 
+			ASSIGN $moved "true";
 		};
 
-		WHEN: TEST(>= $x $MAX_X) { 
+		// Otherwise, attempt to move leftward
+		WHEN: TEST(&& (== $left "true") (== $moved "false")) {
 			UPDATE (robotADirection) (robotADirection "left"); 
 			ASSIGN $moved "true";
 		};
 
-		WHEN: TEST(>= $y $MAX_Y) { 
-			UPDATE (robotADirection) (robotADirection "down");
-			ASSIGN $moved "true"; 
+		// If all else fails, attempt to move downward
+		WHEN: TEST(&& (== $down "true") (== $moved "false")) {
+			UPDATE (robotADirection) (robotADirection "down"); 
+			ASSIGN $moved "true";
+		};
+		/* END: Robot Movement Logic */
+
+
+		// Move the robot in the decided direction for one step
+		// Store the location as visited in the world model (fact)
+		// Check and collect the dust if available at the location
+		RETRIEVE robotADirection $direction;
+		PERFORM move "robotA" $direction;
+		PERFORM store "robotA";
+		PERFORM collect "robotA";
+
+		UPDATE (robotASteps) (robotASteps (+ $iteration 1));
+	};
+
+
+	// Please refer to the comments in the section above
+	// The code is identical but applicable for Robot B
+	WHEN: TEST(== $robot "robotB") {
+		RETRIEVE robotB $x $y;
+		RETRIEVE robotBSteps $iteration;
+
+		// First iteration
+		WHEN: TEST(<= $iteration 0) {
+			EXECUTE println "Robot B: Started at (" $x ", " $y ")";
+			PERFORM collect "robotB";
+			PERFORM store "robotB";
 		};
 
-		WHEN: TEST(== $moved "false") {
-			DO_ANY { 
-				UPDATE (robotADirection) (robotADirection "right"); 
-				ASSIGN $moved "true"; 
-			} { 
-				UPDATE (robotADirection) (robotADirection "up"); 
-				ASSIGN $moved "true"; 
-			} { 
-				UPDATE (robotADirection) (robotADirection "left"); 
-				ASSIGN $moved "true"; 
-			} { 
-				UPDATE (robotADirection) (robotADirection "down"); 
+		ASSIGN $up "true";
+		ASSIGN $down "true";
+		ASSIGN $left "true";
+		ASSIGN $right "true";
+		ASSIGN $moved "false";
+
+		WHEN: TEST(|| (<= $x 0) (FACT visited (- $x 1) $y) (FACT obstacle (- $x 1) $y)) {
+			ASSIGN $left "false";
+		};
+
+		WHEN: TEST(|| (>= $x $MAX_X) (FACT visited (+ $x 1) $y) (FACT obstacle (+ $x 1) $y)) {
+			ASSIGN $right "false";
+		};
+
+		WHEN: TEST(|| (<= $y 0) (FACT visited $x (- $y 1)) (FACT obstacle $x (- $y 1))) {
+			ASSIGN $down "false";
+		};
+
+		WHEN: TEST(|| (>= $y $MAX_Y) (FACT visited $x (+ $y 1)) (FACT obstacle $x (+ $y 1))) {
+			ASSIGN $up "false";
+		};
+
+		WHEN: TEST(&& (== $up "false") (== $down "false") (== $left "false") (== $right "false")) {
+
+			EXECUTE println "Robot B: No Better Move, Attempting a Random Move";
+
+			WHEN: TEST(<= $x 0) { 
+				UPDATE (robotBDirection) (robotBDirection "right");
+				ASSIGN $moved "true";
+			};
+
+			WHEN: TEST(<= $y 0) { 
+				UPDATE (robotBDirection) (robotBDirection "up");
 				ASSIGN $moved "true"; 
 			};
+
+			WHEN: TEST(>= $x $MAX_X) { 
+				UPDATE (robotBDirection) (robotBDirection "left"); 
+				ASSIGN $moved "true";
+			};
+
+			WHEN: TEST(>= $y $MAX_Y) { 
+				UPDATE (robotBDirection) (robotBDirection "down");
+				ASSIGN $moved "true"; 
+			};
+
+			WHEN: TEST(== $moved "false") {
+				DO_ANY { 
+					UPDATE (robotBDirection) (robotBDirection "right"); 
+					ASSIGN $moved "true"; 
+				} { 
+					UPDATE (robotBDirection) (robotBDirection "up"); 
+					ASSIGN $moved "true"; 
+				} { 
+					UPDATE (robotBDirection) (robotBDirection "left"); 
+					ASSIGN $moved "true"; 
+				} { 
+					UPDATE (robotBDirection) (robotBDirection "down"); 
+					ASSIGN $moved "true"; 
+				};
+			};
 		};
+
+		WHEN: TEST(&& (== $right "true") (== $moved "false")) {
+			UPDATE (robotBDirection) (robotBDirection "right"); 
+			ASSIGN $moved "true";
+		};
+
+		WHEN: TEST(&& (== $up "true") (== $moved "false")) {
+			UPDATE (robotBDirection) (robotBDirection "up"); 
+			ASSIGN $moved "true";
+		};
+
+		WHEN: TEST(&& (== $left "true") (== $moved "false")) {
+			UPDATE (robotBDirection) (robotBDirection "left"); 
+			ASSIGN $moved "true";
+		};
+
+		WHEN: TEST(&& (== $down "true") (== $moved "false")) {
+			UPDATE (robotBDirection) (robotBDirection "down"); 
+			ASSIGN $moved "true";
+		};
+
+		RETRIEVE robotBDirection $direction;
+		PERFORM move "robotB" $direction;
+		PERFORM store "robotB";
+		PERFORM collect "robotB";
+
+		UPDATE (robotBSteps) (robotBSteps (+ $iteration 1));
 	};
-
-	WHEN: TEST(&& (== $right "true") (== $moved "false")) {
-		UPDATE (robotADirection) (robotADirection "right"); 
-		ASSIGN $moved "true";
-	};
-
-	WHEN: TEST(&& (== $up "true") (== $moved "false")) {
-		UPDATE (robotADirection) (robotADirection "up"); 
-		ASSIGN $moved "true";
-	};
-
-	WHEN: TEST(&& (== $left "true") (== $moved "false")) {
-		UPDATE (robotADirection) (robotADirection "left"); 
-		ASSIGN $moved "true";
-	};
-
-	WHEN: TEST(&& (== $down "true") (== $moved "false")) {
-		UPDATE (robotADirection) (robotADirection "down"); 
-		ASSIGN $moved "true";
-	};
-
-	RETRIEVE robotADirection $direction;
-	PERFORM move "robotA" $direction;
-	PERFORM store "robotA";
-	PERFORM collect "robotA";
-
-	RETRIEVE robotA $x $y;
-	EXECUTE println "Robot A: (" $x ", " $y ")";
 	
 FAILURE:
-	EXECUTE println "Failed to move the robot";
+	EXECUTE println "System: Failed to Run - " $robot;
 }
+/* END: PLAN run $robot */
 
-PLAN:
-{
-NAME: 
-	"Move robot B to scan over every grid"
-	
-GOAL:
-	ACHIEVE robotBClean;
-	
-BODY:
-	RETRIEVE MAX_X $MAX_X;
-	RETRIEVE MAX_Y $MAX_Y;
 
-	RETRIEVE robotB $x $y;
-	RETRIEVE robotBDirection $horizontal $vertical;
-	RETRIEVE robotBStepsTaken $iteration;
-
-	ASSIGN $goVertical "false";
-
-	WHEN: TEST(<= $iteration 0) {
-		EXECUTE println "Robot B Started: (" $x ", " $y ")";
-		PERFORM collect "robotB";
-		PERFORM store "robotB";
-	};
-
-	WHEN: TEST(&& (|| (<= $x 0) (>= $x $MAX_X)) (> $iteration 0)) {
-		WHEN: TEST(|| (== $horizontal "left") (FACT visited (- $x 1) $y)) {
-			UPDATE (robotBDirection) (robotBDirection "right" $vertical);
-			ASSIGN $goVertical "true";
-		};
-
-		WHEN: TEST(|| (== $horizontal "right") (FACT visited (+ $x 1) $y)) {
-			UPDATE (robotBDirection) (robotBDirection "left" $vertical);
-			ASSIGN $goVertical "true";
-		};
-
-		WHEN: TEST(&& (== $vertical "down") (== $y 0)) {
-			UPDATE (robotBDirection) (robotBDirection $horizontal "up");
-		};
-
-		WHEN: TEST(&& (== $vertical "up") (== $y $MAX_Y)) {
-			UPDATE (robotBDirection) (robotBDirection $horizontal "down");
-		};
-	};
-
-	RETRIEVE allVisited $allVisited;
-	WHEN: TEST(== $allVisited "false") {
-		WHEN: TEST(&& (== $horizontal "left") (FACT visited (- $x 1) $y)) {
-			UPDATE (robotBDirection) (robotBDirection "right" $vertical);
-			ASSIGN $goVertical "true";
-		};
-
-		WHEN: TEST(&& (== $horizontal "right") (FACT visited (+ $x 1) $y)) {
-			UPDATE (robotBDirection) (robotBDirection "left" $vertical);
-			ASSIGN $goVertical "true";
-		};
-	};
-	
-	RETRIEVE robotB $x $y;
-	RETRIEVE robotBDirection $horizontal $vertical;
-
-	// Take one additional step vertically
-	WHEN: TEST(== $goVertical "true") {
-		PERFORM move "robotB" $vertical;
-		PERFORM collect "robotB";
-		PERFORM store "robotB";
-
-		RETRIEVE robotB $x $y;
-		EXECUTE println "Robot B: (" $x ", " $y ")";
-		ASSIGN $goVertical "false";
-	};
-
-	WHEN: TEST(&& (== $horizontal "right") (< $x $MAX_X)) {
-		PERFORM move "robotB" "right";
-	};
-
-	WHEN: TEST(&& (== $horizontal "left") (> $x 0)) {
-		PERFORM move "robotB" "left";
-	};
-
-	PERFORM collect "robotB";
-	PERFORM store "robotB";
-	UPDATE (robotBStepsTaken) (robotBStepsTaken (+ $iteration 1));
-
-	RETRIEVE robotB $x $y;
-	EXECUTE println "Robot B: (" $x ", " $y ")";
-	
-FAILURE:
-	EXECUTE println "Failed to move the robot";
-}
-
+/* BEGIN: PLAN move $robot $direction */
 PLAN:
 {
 NAME:
 	"Move the given robot one step on the given direction"
 
+DOCUMENTATION:
+	"The plan attempts to move the given robot in the given direction for one step, with the validation,
+		- To ensure that the direction to advance does not contain an obstacle.
+		- To ensure that the robot does not go out of the boundaries of the grid."
+
 GOAL:
 	ACHIEVE move $robot $direction;
 
 BODY:
+	RETRIEVE MAX_X $MAX_X;
+	RETRIEVE MAX_Y $MAX_Y;
+
+	// Move Robot A
 	WHEN: TEST(== $robot "robotA") {
 		RETRIEVE robotA $x $y;
-	
-		WHEN: TEST(&& (== $direction "right") (!(FACT obstacle (+ $x 1) $y))) {
+
+		// Check and ensure that the right side does not contain an obstacle and is within the boundaries
+		// The same applies for the following validations
+		WHEN: TEST(&& (== $direction "right") (!(FACT obstacle (+ $x 1) $y)) (<= (+ $x 1) $MAX_X)) {
 			UPDATE (robotA) (robotA (+ $x 1) $y);
 		};
 
-		WHEN: TEST(&& (== $direction "left") (!(FACT obstacle (- $x 1) $y))) {
+		WHEN: TEST(&& (== $direction "left") (!(FACT obstacle (- $x 1) $y)) (>= (- $x 1) 0)) {
 			UPDATE (robotA) (robotA (- $x 1) $y);
 		};
 
-		WHEN: TEST(&& (== $direction "up") (!(FACT obstacle $x (+ $y 1)))) {
+		WHEN: TEST(&& (== $direction "up") (!(FACT obstacle $x (+ $y 1))) (<= (+ $y 1) $MAX_Y)) {
 			UPDATE (robotA) (robotA $x (+ $y 1));
 		};
 
-		WHEN: TEST(&& (== $direction "down") (!(FACT obstacle $x (- $y 1)))) {
+		WHEN: TEST(&& (== $direction "down") (!(FACT obstacle $x (- $y 1))) (>= (- $y 1) 0)) {
 			UPDATE (robotA) (robotA $x (- $y 1));
 		};
+
+		RETRIEVE robotA $x $y;
+		EXECUTE println "Robot A: (" $x ", " $y ")";
 	};
 	
+	// Move Robot B
+	// Please refer to the section above as the logic is identical but applicable for Robot B
 	WHEN: TEST(== $robot "robotB") {
 		RETRIEVE robotB $x $y;
 	
-		WHEN: TEST(&& (== $direction "right") (!(FACT obstacle (+ $x 1) $y))) {
+		WHEN: TEST(&& (== $direction "right") (!(FACT obstacle (+ $x 1) $y)) (<= (+ $x 1) $MAX_X)) {
 			UPDATE (robotB) (robotB (+ $x 1) $y);
 		};
 
-		WHEN: TEST(&& (== $direction "left") (!(FACT obstacle (- $x 1) $y))) {
+		WHEN: TEST(&& (== $direction "left") (!(FACT obstacle (- $x 1) $y)) (>= (- $x 1) 0)) {
 			UPDATE (robotB) (robotB (- $x 1) $y);
 		};
 
-		WHEN: TEST(&& (== $direction "up") (!(FACT obstacle $x (+ $y 1)))) {
+		WHEN: TEST(&& (== $direction "up") (!(FACT obstacle $x (+ $y 1))) (<= (+ $y 1) $MAX_Y)) {
 			UPDATE (robotB) (robotB $x (+ $y 1));
 		};
 
-		WHEN: TEST(&& (== $direction "down") (!(FACT obstacle $x (- $y 1)))) {
+		WHEN: TEST(&& (== $direction "down") (!(FACT obstacle $x (- $y 1))) (>= (- $y 1) 0)) {
 			UPDATE (robotB) (robotB $x (- $y 1));
 		};
+
+		RETRIEVE robotB $x $y;
+		EXECUTE println "Robot B: (" $x ", " $y ")";
 	};
 	
 FAILURE:
-	EXECUTE println "Failed to move the robot";
+	EXECUTE println "System: Failed to Move - " $robot;
 }
+/* END: PLAN move $robot $direction */
 
+
+/* BEGIN: PLAN collect $robot */
 PLAN:
 {
 NAME:
 	"Check and collect dust at the location of the given robot"
 
+DOCUMENTATION:
+	"The plan checks and collects the dust at the location of the given robot. 
+		- The fact of the collected dust will be retracted as a method of communication between the two robots."
+
 GOAL:
 	ACHIEVE collect $robot;
 
 BODY:
+
+	// Retrieve all the dusts from the world model (fact)
 	RETRIEVEALL $FACTS dust $x $y;
 
+	// Check the location of Robot A with the location of the dusts
+	// If the robot is at the location of a dust, collect the dust and retract the fact
 	WHEN: TEST(== $robot "robotA") {
 		RETRIEVE robotA $rX $rY;
 		WHILE: NEXTFACT $FACTS dust $x $y {
 			WHEN: TEST(&& (== $x $rX) (== $y $rY)) {
 				RETRACT dust $x $y;
-				EXECUTE println "Robot A Collected: (" $x ", " $y ")";
+				EXECUTE println "Robot A: Collected Dust at (" $x ", " $y ")";
 			};
 		};
 	};
@@ -438,79 +484,80 @@ BODY:
 		WHILE: NEXTFACT $FACTS dust $x $y {
 			WHEN: TEST(&& (== $x $rX) (== $y $rY)) {
 				RETRACT dust $x $y;
-				EXECUTE println "Robot B Collected: (" $x ", " $y ")";
+				EXECUTE println "Robot B: Collected Dust at (" $x ", " $y ")";
 			};
 		};
 	};
 
 FAILURE:
-	EXECUTE println "Failed to collect the dust";
+	EXECUTE println "System: Failed to Collect Dust - " $robot;
 }
+/* END: PLAN collect $robot */
 
+
+/* BEGIN: PLAN store $robot */
 PLAN:
 {
 NAME:
-	"Store the visited location"
+	"Store the visited location of the given robot"
+
+DOCUMENTATION:
+	"The plan stores the location visited by the given robot in the world model (fact)"
 
 GOAL:
 	ACHIEVE store $robot;
 
 BODY:
+
+	// Check if the location was previously added to the visited List
+	// If it is not, then add it to the visited list
 	WHEN: TEST(== $robot "robotA") {
 		RETRIEVE robotA $x $y;
-		ASSERT visited $x $y;
+		WHEN: TEST(!(FACT visited $x $y)) {
+			ASSERT visited $x $y;
+		};
 	};
 
 	WHEN: TEST(== $robot "robotB") {
 		RETRIEVE robotB $x $y;
-		ASSERT visited $x $y;
+		WHEN: TEST(!(FACT visited $x $y)) {
+			ASSERT visited $x $y;
+		};
 	};
 
-	// EXECUTE println "\n--- Visited ---";
-	// RETRIEVEALL $FACTS visited $x $y;
-	// WHILE: NEXTFACT $FACTS visited $x $y {
-	// 	EXECUTE println "Visited: (" $x ", " $y ")";
-	// };
-	// EXECUTE println "--- End Visited ---\n";
-
 FAILURE:
-	EXECUTE println "Failed to store the visited location";
+	EXECUTE println "System: Failed to Store Visited Location - " $robot;
 }
+/* END: PLAN store $robot */
 
+
+/* BEGIN: PLAN check */
 PLAN:
 {
 NAME:
-	"Check and update the attributes of the world"
+	"Check whether if all the dusts were cleaned"
+
+DOCUMENTATION:
+	"Check and update if all the dusts were cleaned in the world model (fact)."
 
 GOAL:
 	ACHIEVE check;
 
 BODY:
+
+	// Go through the list of dusts
 	ASSIGN $dustCount 0;
 	RETRIEVEALL $FACTS dust $x $y;
 	WHILE: NEXTFACT $FACTS dust $x $y {
 		ASSIGN $dustCount (+ $dustCount 1);
 	};
 
-	RETRIEVE MAX_X $MAX_X;
-	RETRIEVE MAX_Y $MAX_Y;
-	ASSIGN $visitedCount 0;
-	ASSIGN $totalGrid (* (+ $MAX_X 1) (+ $MAX_Y 1));
-
-	RETRIEVEALL $FACTS visited $x $y;
-	WHILE: NEXTFACT $FACTS visited $x $y {
-		ASSIGN $visitedCount (+ $visitedCount 1);
-	};
-
-	// EXECUTE println "\n--- Visited ---\n";
-	// EXECUTE println $visitedCount " / " $totalGrid;
-	// EXECUTE println "\n--- End ---\n";
-
+	// If the dust list is empty, update the dustCleaned fact to true
 	WHEN: TEST(<= $dustCount 0) {
 		UPDATE (dustCleaned) (dustCleaned "true");
 	};
 
-	WHEN: TEST(>= $visitedCount $totalGrid) {
-		UPDATE (allVisited) (allVisited "true");
-	};
+FAILURE:
+	EXECUTE println "System: Failed to Check If the Dusts were Cleaned";
 }
+/* END: PLAN check */
