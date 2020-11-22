@@ -41,7 +41,7 @@ FACTS:
 	// The dusts that are surrounded by obstacles cannot be cleaned
 	// The robot will attempt to search through the grid for an entry
 	// But if none, the robot will give up after the time limit (MAX_X * MAX_Y * 10)
-	// FACT obstacle 4 1;
+	FACT obstacle 4 1;
 
 	// Exit location
 	FACT exit 7 6;
@@ -161,14 +161,6 @@ BODY:
 		RETRIEVE robotA $aX $aY;
 		RETRIEVE robotB $bX $bY;
 		ASSIGN $iteration (+ $iteration 1);
-	};
-
-	WHEN: TEST(&& (== $aX $exitX) (== $aY $exitY)) {
-		EXECUTE println "Robot A: Exited at (" $exitX ", " $exitY ")";
-	};
-
-	WHEN: TEST(&& (== $bX $exitX) (== $bY $exitY)) {
-		EXECUTE println "Robot B: Exited at (" $exitX ", " $exitY ")";
 	};
 
 	EXECUTE println "System: Terminated";
@@ -475,50 +467,105 @@ BODY:
 			ASSIGN $moved "false";
 
 			// Check which are the valid moves
-			WHEN: TEST(|| (<= $x 0) (FACT obstacle (- $x 1) $y)) {
+			WHEN: TEST(|| (<= $x 0) (FACT robotAVisited (- $x 1) $y) (FACT obstacle (- $x 1) $y)) {
 				ASSIGN $left "false";
 			};
 
-			WHEN: TEST(|| (>= $x $MAX_X) (FACT obstacle (+ $x 1) $y)) {
+			WHEN: TEST(|| (>= $x $MAX_X) (FACT robotAVisited (+ $x 1) $y) (FACT obstacle (+ $x 1) $y)) {
 				ASSIGN $right "false";
 			};
 
-			WHEN: TEST(|| (<= $y 0) (FACT obstacle $x (- $y 1))) {
+			WHEN: TEST(|| (<= $y 0) (FACT robotAVisited $x (- $y 1)) (FACT obstacle $x (- $y 1))) {
 				ASSIGN $down "false";
 			};
 
-			WHEN: TEST(|| (>= $y $MAX_Y) (FACT obstacle $x (+ $y 1))) {
+			WHEN: TEST(|| (>= $y $MAX_Y) (FACT robotAVisited $x (+ $y 1)) (FACT obstacle $x (+ $y 1))) {
 				ASSIGN $up "false";
 			};
 
+			// If there is no other move that leads better to the exit,
+			// Perform a random move
+			WHEN: TEST(&& (== $up "false") (== $down "false") (== $left "false") (== $right "false")) {
+
+				EXECUTE println "Robot A: No Better Move to Exit, Attempting a Random Move";
+
+				// If the robot is at the boundaries, move in the opposite direction
+				WHEN: TEST(<= $x 0) { 
+					UPDATE (robotADirection) (robotADirection "right");
+					ASSIGN $moved "true";
+				};
+
+				WHEN: TEST(<= $y 0) { 
+					UPDATE (robotADirection) (robotADirection "up");
+					ASSIGN $moved "true"; 
+				};
+
+				WHEN: TEST(>= $x $MAX_X) { 
+					UPDATE (robotADirection) (robotADirection "left"); 
+					ASSIGN $moved "true";
+				};
+
+				WHEN: TEST(>= $y $MAX_Y) { 
+					UPDATE (robotADirection) (robotADirection "down");
+					ASSIGN $moved "true"; 
+				};
+
+				// Attempt to make a random move if the robot is not at the boundaries
+				WHEN: TEST(== $moved "false") {
+					DO_ANY { 
+						UPDATE (robotADirection) (robotADirection "right"); 
+						ASSIGN $moved "true"; 
+					} { 
+						UPDATE (robotADirection) (robotADirection "up"); 
+						ASSIGN $moved "true"; 
+					} { 
+						UPDATE (robotADirection) (robotADirection "left"); 
+						ASSIGN $moved "true"; 
+					} { 
+						UPDATE (robotADirection) (robotADirection "down"); 
+						ASSIGN $moved "true"; 
+					};
+				};
+			};
+
 			// The following logic helps to navigate the robot in moving along the obstacles or boundaries
-			// Attempt to move towards the right if possible
+			// Attempt to move towards the right if possible (prioritizing the movement to the right)
 			WHEN: TEST(&& (== $right "true") (== $moved "false")) {
-				PERFORM move "robotA" "right";
+				UPDATE (robotADirection) (robotADirection "right"); 
 				ASSIGN $moved "true";
 			};
 
 			// Otherwise, attempt to move upwards
 			WHEN: TEST(&& (== $up "true") (== $moved "false")) {
-				PERFORM move "robotA" "up";
+				UPDATE (robotADirection) (robotADirection "up"); 
 				ASSIGN $moved "true";
 			};
 
 			// Otherwise, try to move towards the left
 			WHEN: TEST(&& (== $left "true") (== $moved "false")) {
-				PERFORM move "robotA" "left";
+				UPDATE (robotADirection) (robotADirection "left"); 
 				ASSIGN $moved "true";
 			};
 
 			// If all else fail, move towards the bottom
 			// This is a heuristic in hope to find a path to the exit
 			WHEN: TEST(&& (== $down "true") (== $moved "false")) {
-				PERFORM move "robotA" "down";
+				UPDATE (robotADirection) (robotADirection "down"); 
 				ASSIGN $moved "true";
 			};
 			/* END: Robot Movement Logic */
 
 
+			// Move the robot in the decided direction for one step
+			// Mark the current location as visited for the robot
+			RETRIEVE robotADirection $direction;
+			ASSERT robotAVisited $x $y;
+			PERFORM move "robotA" $direction;
+
+			RETRIEVE robotA $x $y;
+			WHEN: TEST(&& (== $x $exitX) (== $y $exitY)) {
+				EXECUTE println "Robot A: Exited at (" $exitX ", " $exitY ")";
+			};
 		};
 	};
 	
@@ -528,47 +575,96 @@ BODY:
 		RETRIEVE robotB $x $y;
 
 		WHEN: TEST(|| (!= $x $exitX) (!= $y $exitY)) {
-
 			ASSIGN $up "true";
 			ASSIGN $down "true";
 			ASSIGN $left "true";
 			ASSIGN $right "true";
 			ASSIGN $moved "false";
 
-			WHEN: TEST(|| (<= $x 0) (FACT obstacle (- $x 1) $y)) {
+			WHEN: TEST(|| (<= $x 0) (FACT robotBVisited (- $x 1) $y) (FACT obstacle (- $x 1) $y)) {
 				ASSIGN $left "false";
 			};
 
-			WHEN: TEST(|| (>= $x $MAX_X) (FACT obstacle (+ $x 1) $y)) {
+			WHEN: TEST(|| (>= $x $MAX_X) (FACT robotBVisited (+ $x 1) $y) (FACT obstacle (+ $x 1) $y)) {
 				ASSIGN $right "false";
 			};
 
-			WHEN: TEST(|| (<= $y 0) (FACT obstacle $x (- $y 1))) {
+			WHEN: TEST(|| (<= $y 0) (FACT robotBVisited $x (- $y 1)) (FACT obstacle $x (- $y 1))) {
 				ASSIGN $down "false";
 			};
 
-			WHEN: TEST(|| (>= $y $MAX_Y) (FACT obstacle $x (+ $y 1))) {
+			WHEN: TEST(|| (>= $y $MAX_Y) (FACT robotBVisited $x (+ $y 1)) (FACT obstacle $x (+ $y 1))) {
 				ASSIGN $up "false";
 			};
 
+			WHEN: TEST(&& (== $up "false") (== $down "false") (== $left "false") (== $right "false")) {
+
+				EXECUTE println "Robot B: No Better Move to Exit, Attempting a Random Move";
+
+				WHEN: TEST(<= $x 0) { 
+					UPDATE (robotBDirection) (robotBDirection "right");
+					ASSIGN $moved "true";
+				};
+
+				WHEN: TEST(<= $y 0) { 
+					UPDATE (robotBDirection) (robotBDirection "up");
+					ASSIGN $moved "true"; 
+				};
+
+				WHEN: TEST(>= $x $MAX_X) { 
+					UPDATE (robotBDirection) (robotBDirection "left"); 
+					ASSIGN $moved "true";
+				};
+
+				WHEN: TEST(>= $y $MAX_Y) { 
+					UPDATE (robotBDirection) (robotBDirection "down");
+					ASSIGN $moved "true"; 
+				};
+
+				WHEN: TEST(== $moved "false") {
+					DO_ANY { 
+						UPDATE (robotBDirection) (robotBDirection "right"); 
+						ASSIGN $moved "true"; 
+					} { 
+						UPDATE (robotBDirection) (robotBDirection "up"); 
+						ASSIGN $moved "true"; 
+					} { 
+						UPDATE (robotBDirection) (robotBDirection "left"); 
+						ASSIGN $moved "true"; 
+					} { 
+						UPDATE (robotBDirection) (robotBDirection "down"); 
+						ASSIGN $moved "true"; 
+					};
+				};
+			};
+
 			WHEN: TEST(&& (== $right "true") (== $moved "false")) {
-				PERFORM move "robotB" "right";
+				UPDATE (robotBDirection) (robotBDirection "right"); 
 				ASSIGN $moved "true";
 			};
 
 			WHEN: TEST(&& (== $up "true") (== $moved "false")) {
-				PERFORM move "robotB" "up";
+				UPDATE (robotBDirection) (robotBDirection "up"); 
 				ASSIGN $moved "true";
 			};
 
 			WHEN: TEST(&& (== $left "true") (== $moved "false")) {
-				PERFORM move "robotB" "left";
+				UPDATE (robotBDirection) (robotBDirection "left"); 
 				ASSIGN $moved "true";
 			};
 
 			WHEN: TEST(&& (== $down "true") (== $moved "false")) {
-				PERFORM move "robotB" "down";
+				UPDATE (robotBDirection) (robotBDirection "down"); 
 				ASSIGN $moved "true";
+			};
+
+			RETRIEVE robotBDirection $direction;
+			ASSERT robotBVisited $x $y;
+			PERFORM move "robotB" $direction;
+
+			RETRIEVE robotB $x $y;
+			WHEN: TEST(&& (== $x $exitX) (== $y $exitY)) {
+				EXECUTE println "Robot B: Exited at (" $exitX ", " $exitY ")";
 			};
 		};
 	};
@@ -604,18 +700,22 @@ BODY:
 		// Check and ensure that the right side does not contain an obstacle and is within the boundaries
 		// The same applies for the following validations
 		WHEN: TEST(&& (== $direction "right") (!(FACT obstacle (+ $x 1) $y)) (<= (+ $x 1) $MAX_X)) {
+			EXECUTE println "Robot A: Going right";
 			UPDATE (robotA) (robotA (+ $x 1) $y);
 		};
 
 		WHEN: TEST(&& (== $direction "left") (!(FACT obstacle (- $x 1) $y)) (>= (- $x 1) 0)) {
+			EXECUTE println "Robot A: Going left";
 			UPDATE (robotA) (robotA (- $x 1) $y);
 		};
 
 		WHEN: TEST(&& (== $direction "up") (!(FACT obstacle $x (+ $y 1))) (<= (+ $y 1) $MAX_Y)) {
+			EXECUTE println "Robot A: Going up";
 			UPDATE (robotA) (robotA $x (+ $y 1));
 		};
 
 		WHEN: TEST(&& (== $direction "down") (!(FACT obstacle $x (- $y 1))) (>= (- $y 1) 0)) {
+			EXECUTE println "Robot A: Going down";
 			UPDATE (robotA) (robotA $x (- $y 1));
 		};
 
@@ -629,18 +729,22 @@ BODY:
 		RETRIEVE robotB $x $y;
 	
 		WHEN: TEST(&& (== $direction "right") (!(FACT obstacle (+ $x 1) $y)) (<= (+ $x 1) $MAX_X)) {
+			EXECUTE println "Robot B: Going right";
 			UPDATE (robotB) (robotB (+ $x 1) $y);
 		};
 
 		WHEN: TEST(&& (== $direction "left") (!(FACT obstacle (- $x 1) $y)) (>= (- $x 1) 0)) {
+			EXECUTE println "Robot B: Going left";
 			UPDATE (robotB) (robotB (- $x 1) $y);
 		};
 
 		WHEN: TEST(&& (== $direction "up") (!(FACT obstacle $x (+ $y 1))) (<= (+ $y 1) $MAX_Y)) {
+			EXECUTE println "Robot B: Going up";
 			UPDATE (robotB) (robotB $x (+ $y 1));
 		};
 
 		WHEN: TEST(&& (== $direction "down") (!(FACT obstacle $x (- $y 1))) (>= (- $y 1) 0)) {
+			EXECUTE println "Robot B: Going down";
 			UPDATE (robotB) (robotB $x (- $y 1));
 		};
 
