@@ -41,7 +41,7 @@ FACTS:
 	// The dusts that are surrounded by obstacles cannot be cleaned
 	// The robot will attempt to search through the grid for an entry
 	// But if none, the robot will give up after the time limit (MAX_X * MAX_Y * 10)
-	FACT obstacle 4 1;
+	// FACT obstacle 4 1;
 
 	// Exit location
 	FACT exit 7 6;
@@ -217,7 +217,7 @@ BODY:
 		ASSIGN $right "true";
 		ASSIGN $moved "false";
 
-		// Check which direction is valid and can be moved to based on,
+		// Check which direction is valid and can be moved to base on,
 		// - Whether if the robot is at the boundary.
 		// - Whether if the cell to be advanced to was visited.
 		// - Whether if the cell to be advanced to was blocked by an obstacle.
